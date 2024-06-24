@@ -25,6 +25,32 @@ rules:
   - update
   - watch
 - apiGroups:
+  - bpfman.io
+  resources:
+  - bpfapplications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - bpfman.io
+  resources:
+  - bpfapplications/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - bpfman.io
+  resources:
+  - bpfapplications/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - ingressnodefirewall.openshift.io
   resources:
   - ingressnodefirewallconfigs

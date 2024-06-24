@@ -17,12 +17,13 @@ import (
 	"flag"
 	"os"
 
-	ingressnodefwiov1alpha1 "github.com/openshift/ingress-node-firewall/api/v1alpha1"
 	ingressnodefwv1alpha1 "github.com/openshift/ingress-node-firewall/api/v1alpha1"
 	"github.com/openshift/ingress-node-firewall/controllers"
 	"github.com/openshift/ingress-node-firewall/pkg/metrics"
 	"github.com/openshift/ingress-node-firewall/pkg/version"
 
+	bpfmaniov1alpha1 "github.com/bpfman/bpfman-operator/apis/v1alpha1"
+	osv1 "github.com/openshift/api/security/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -31,8 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
-	// to ensure that exec-entrypoint and run can make use of them.
+
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	//+kubebuilder:scaffold:imports
 )
@@ -45,8 +45,9 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(ingressnodefwiov1alpha1.AddToScheme(scheme))
 	utilruntime.Must(ingressnodefwv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(bpfmaniov1alpha1.Install(scheme))
+	utilruntime.Must(osv1.Install(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -54,8 +55,8 @@ func main() {
 	var metricsAddr string
 	var probeAddr string
 	// We are host networked, we set default to loopback by default
-	flag.StringVar(&probeAddr, "health-probe-bind-address", "127.0.0.1:39300", "The address the probe endpoint binds to.")
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "127.0.0.1:39301", "The address the metric endpoint binds to.")
+	flag.StringVar(&probeAddr, "health-probe-bind-address", "127.0.0.1:39400", "The address the probe endpoint binds to.")
+	flag.StringVar(&metricsAddr, "metrics-bind-address", "127.0.0.1:39401", "The address the metric endpoint binds to.")
 	opts := zap.Options{
 		Development: true,
 	}

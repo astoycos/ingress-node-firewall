@@ -45,6 +45,9 @@ var ingressNodeFirewallFinalizer = "ingressnodefirewall.openshift.io/finalizer"
 //+kubebuilder:rbac:groups=ingressnodefirewall.openshift.io,namespace=ingress-node-firewall-system,resources=ingressnodefirewallnodestates,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ingressnodefirewall.openshift.io,namespace=ingress-node-firewall-system,resources=ingressnodefirewallnodestates/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=ingressnodefirewall.openshift.io,namespace=ingress-node-firewall-system,resources=ingressnodefirewallnodestates/finalizers,verbs=update
+//+kubebuilder:rbac:groups=bpfman.io,resources=bpfapplications,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=bpfman.io,resources=bpfapplications/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=bpfman.io,resources=bpfapplications/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -116,7 +119,7 @@ var mock ebpfsyncer.EbpfSyncer = nil
 // For mock tests, var mock can be overwritten.
 func (r *IngressNodeFirewallNodeStateReconciler) reconcileResource(
 	ctx context.Context, instance *infv1alpha1.IngressNodeFirewallNodeState, isDelete bool) (ctrl.Result, error) {
-	if err := ebpfsyncer.GetEbpfSyncer(ctx, r.Log, r.Stats, mock).SyncInterfaceIngressRules(instance.Spec.InterfaceIngressRules, isDelete); err != nil {
+	if err := ebpfsyncer.GetEbpfSyncer(ctx, r.Log, r.Stats, r.Client, mock).SyncInterfaceIngressRules(instance.Spec.InterfaceIngressRules, isDelete); err != nil {
 		return ctrl.Result{}, errors.Wrapf(err, "FailedToSyncIngressNodeFirewallResources")
 	}
 	return ctrl.Result{}, nil
