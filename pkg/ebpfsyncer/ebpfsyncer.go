@@ -165,9 +165,15 @@ func (e *ebpfSingleton) loadIngressNodeFirewallRules(
 // resetAll deletes all current attachments and cleans all eBPFObjects. It then sets the ingress firewall manager
 // back to nil. It also deletes all pins and removes all XDP attachments for all system interfaces.
 func (e *ebpfSingleton) resetAll() error {
+	var err error
 	e.log.Info("Running detach operation of managed interfaces")
 	for intf := range e.managedInterfaces {
-		err := e.c.IngressNodeFwDetach(intf)
+		if e.c.Mode {
+			// delete bpfman app object and detach ingress firewall prog
+			err = bpf_mgr.BpfmanDetachNodeFirewall(e.ctx, e.client, intf)
+		} else {
+			err = e.c.IngressNodeFwDetach(intf)
+		}
 		if err != nil {
 			e.log.Info("Could not detach managed interface", "intf", intf, "err", err)
 		}

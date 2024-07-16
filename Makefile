@@ -190,6 +190,17 @@ docker-push: ## Push docker image with the manager.
 podman-push: ## Push podman image with the manager.
 	podman push ${IMG}
 
+IMAGE_INFW_BC ?= quay.io/bpfman-bytecode/ingress-node-firewall:latest
+
+.PHONY: build-bc-image
+build-bc-image: generate ## Build bytecode image
+	IMAGE_INFW_BC=${IMAGE_INFW_BC} ./hack/build-bytecode-images.sh
+
+.PHONY: push-bc-image
+push-bc-image: ## Push bytecode image
+	docker push ${IMAGE_INFW_BC}
+
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -460,17 +471,17 @@ daemon: ebpf-generate ## Build the daemon.
 	hack/build-daemon.sh
 
 .PHONY: docker-build-daemon
-docker-build-daemon: ## Build the daemon image with docker. To change location, specify DAEMON_IMG=<image>.
+docker-build-daemon: build-bc-image ## Build the daemon image with docker. To change location, specify DAEMON_IMG=<image>.
 	docker build -t ${DAEMON_IMG} -f Dockerfile.daemon .
 
 .PHONY: docker-push-daemon
-docker-push-daemon: ## Push the daemon image with docker. To change location, specify DAEMON_IMG=<image>.
+docker-push-daemon: push-bc-image ## Push the daemon image with docker. To change location, specify DAEMON_IMG=<image>.
 	docker push ${DAEMON_IMG}
 
 .PHONY: podman-build-daemon
-podman-build-daemon: ## Build the daemon image with podman. To change location, specify DAEMON_IMG=<image>.
+podman-build-daemon: build-bc-image ## Build the daemon image with podman. To change location, specify DAEMON_IMG=<image>.
 	podman build -t ${DAEMON_IMG} -f Dockerfile.daemon .
 
 .PHONY: podman-push-daemon
-podman-push-daemon: ## Push the daemon image with docker. To change location, specify DAEMON_IMG=<image>.
+podman-push-daemon: push-bc-image ## Push the daemon image with docker. To change location, specify DAEMON_IMG=<image>.
 	podman push ${DAEMON_IMG}

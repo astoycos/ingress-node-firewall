@@ -53,6 +53,7 @@ spec:
             - name: bpf-maps
               mountPath: /sys/fs/bpf
               mountPropagation: Bidirectional
+              #readOnly: true
             - name: syslog-socket
               mountPath: /var/run
         - name: events
@@ -118,6 +119,11 @@ spec:
           hostPath:
             path: /sys/fs/bpf
             type: DirectoryOrCreate
+            #csi:
+            #driver: csi.bpfman.io
+            #volumeAttributes:
+            #  csi.bpfman.io/program: ingress-node-firewall
+            # csi.bpfman.io/maps: ingress_node_firewall_events_map,ingress_node_firewall_statistics_map,ingress_node_firewall_table_map,ingress_node_firewall_dbg_map
         # Must be optional because the ingress-node-firewall-daemon-metrics-certs is a service serving
         # certificate and those cannot be generated without the daemon running
         - name: ingress-node-firewall-daemon-metrics-certs
