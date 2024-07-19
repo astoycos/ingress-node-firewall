@@ -11,7 +11,6 @@ import (
 
 	"github.com/openshift/ingress-node-firewall/api/v1alpha1"
 	infv1alpha1 "github.com/openshift/ingress-node-firewall/api/v1alpha1"
-	bpf_mgr "github.com/openshift/ingress-node-firewall/pkg/bpf-mgr"
 	nodefwloader "github.com/openshift/ingress-node-firewall/pkg/ebpf"
 	intfs "github.com/openshift/ingress-node-firewall/pkg/interfaces"
 	"github.com/openshift/ingress-node-firewall/pkg/metrics"
@@ -168,10 +167,7 @@ func (e *ebpfSingleton) resetAll() error {
 	var err error
 	e.log.Info("Running detach operation of managed interfaces")
 	for intf := range e.managedInterfaces {
-		if e.c.Mode {
-			// delete bpfman app object and detach ingress firewall prog
-			err = bpf_mgr.BpfmanDetachNodeFirewall(e.ctx, e.client, intf)
-		} else {
+		if !e.c.Mode {
 			err = e.c.IngressNodeFwDetach(intf)
 		}
 		if err != nil {
@@ -211,11 +207,8 @@ func (e *ebpfSingleton) attachNewInterfaces(ifaceIngressRules map[string][]v1alp
 				},
 				func() error {
 					var err error
-					e.log.Info("Attaching firewall interface", "intf", intf)
-					if e.c.Mode {
-						// create bpfman app object and attach ingress firewall prog
-						err = bpf_mgr.BpfmanAttachNodeFirewall(e.ctx, e.client, intf)
-					} else {
+					if !e.c.Mode {
+						e.log.Info("Attaching firewall interface", "intf", intf)
 						err = e.c.IngressNodeFwAttach(intf)
 					}
 					if err != nil {
@@ -242,11 +235,8 @@ func (e *ebpfSingleton) detachUnmanagedInterfaces(ifaceIngressRules map[string][
 		"e.managedInterfaces", e.managedInterfaces)
 	for intf := range e.managedInterfaces {
 		if _, ok := ifaceIngressRules[intf]; !ok {
-			e.log.Info("Running detach operation for interface", "intf", intf)
-			if e.c.Mode {
-				// delete bpfman app object and detach ingress firewall prog
-				err = bpf_mgr.BpfmanDetachNodeFirewall(e.ctx, e.client, intf)
-			} else {
+			if !e.c.Mode {
+				e.log.Info("Running detach operation for interface", "intf", intf)
 				err = e.c.IngressNodeFwDetach(intf)
 			}
 			if err != nil {

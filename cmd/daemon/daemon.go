@@ -22,8 +22,6 @@ import (
 	"github.com/openshift/ingress-node-firewall/pkg/metrics"
 	"github.com/openshift/ingress-node-firewall/pkg/version"
 
-	bpfmaniov1alpha1 "github.com/bpfman/bpfman-operator/apis/v1alpha1"
-	osv1 "github.com/openshift/api/security/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -46,8 +44,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(ingressnodefwv1alpha1.AddToScheme(scheme))
-	utilruntime.Must(bpfmaniov1alpha1.Install(scheme))
-	utilruntime.Must(osv1.Install(scheme))
+
 	//+kubebuilder:scaffold:scheme
 }
 

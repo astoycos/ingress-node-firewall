@@ -19,11 +19,14 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
+	"strconv"
 
 	infv1alpha1 "github.com/openshift/ingress-node-firewall/api/v1alpha1"
 
 	"github.com/go-logr/logr"
+	bpf_mgr "github.com/openshift/ingress-node-firewall/pkg/bpf-mgr"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -80,6 +83,28 @@ func (r *IngressNodeFirewallReconciler) Reconcile(ctx context.Context, req ctrl.
 	if err != nil {
 		r.Log.Error(err, "Failed to build IngressNodeFirewallNodeState")
 		return ctrl.Result{}, err
+	}
+
+	// build interface list if bpfman is enabled
+	var intlist []string
+	if b, err := strconv.ParseBool(os.Getenv("EBPF_MANAGER_MODE")); err == nil && b {
+		for _, obj := range ingressNodeFirewallList.Items {
+			intlist = append(intlist, obj.Spec.Interfaces...)
+		}
+
+		debug := false
+		if b, err := strconv.ParseBool(os.Getenv("EBPF_DEBUG_MODE")); err == nil {
+			debug = b
+		}
+
+		// Create/update the BpfApplication object to ensure the program is deployed
+		// on each interface
+		// NOTE CURRENTLY ALL INTERFACES MUST EXIST ON EACH NODE TODO: PROVIDE AN INTERFACE
+		// SELECTOR FOR INTERFACES IN BPFMAN
+		err = bpf_mgr.BpfmanAttachNodeFirewall(ctx, r.Client, intlist, debug)
+		if err != nil {
+			r.Log.Error(err, "Failed to update IGNFW BpfApplication Object", "interfaces: ", intlist)
+		}
 	}
 
 	// 3) Delete objects which should not be there, update existing objects and create missing ones.

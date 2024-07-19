@@ -19,6 +19,8 @@ package controllers
 import (
 	"context"
 	"os"
+
+	//"strconv"
 	"time"
 
 	ingressnodefwv1alpha1 "github.com/openshift/ingress-node-firewall/api/v1alpha1"
@@ -28,11 +30,14 @@ import (
 	"github.com/openshift/ingress-node-firewall/pkg/status"
 
 	"github.com/go-logr/logr"
+	bpf_mgr "github.com/openshift/ingress-node-firewall/pkg/bpf-mgr"
 	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	kscheme "k8s.io/client-go/kubernetes/scheme"
+
+	//"k8s.io/klog"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -75,16 +80,39 @@ func (r *IngressNodeFirewallConfigReconciler) Reconcile(ctx context.Context, req
 	req.Namespace = r.Namespace
 	instance := &ingressnodefwv1alpha1.IngressNodeFirewallConfig{}
 	err := r.Get(ctx, req.NamespacedName, instance)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
-			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// Return and don't requeue
-			return ctrl.Result{}, nil
+	if apierrors.IsNotFound(err) || instance.DeletionTimestamp != nil {
+		// Delete the BpfApplication Object if the config is gone or being deleted
+		// delete bpfman app object and detach ingress firewall prog
+		err = bpf_mgr.BpfmanDetachNodeFirewall(ctx, r.Client, []string{}, false)
+		if err != nil {
+			logger.Error(err, "Failed to delete IGNFW BpfApplication Object")
 		}
-		// Error reading the object - requeue the request.
+
+		// Request object not found, could have been deleted after reconcile request.
+		// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+		// Return and don't requeue
+		return ctrl.Result{}, nil
+
+	}
+	if err != nil {
 		return ctrl.Result{}, err
 	}
+
+	// // Create bpfApplication object if enabled
+	// if b, err := strconv.ParseBool(os.Getenv("EBPF_MANAGER_MODE")); err == nil && b {
+	// 	klog.Info("eBPF manager ie enabled parsing config and attempting to create bpfApplication")
+
+	// 	debug := false
+	// 	if b, err := strconv.ParseBool(os.Getenv("EBPF_DEBUG_MODE")); err == nil {
+	// 		debug = b
+	// 	}
+
+	// 	// Create/update the BpfApplication object with no interfaces selected
+	// 	err = bpf_mgr.BpfmanAttachNodeFirewall(ctx, r.Client, []string{}, debug)
+	// 	if err != nil {
+	// 		logger.Error(err, "Failed to create IGNFW BpfApplication Object")
+	// 	}
+	// }
 
 	if req.Name != defaultIngressNodeFirewallCrName {
 		logger.Error(err, "Invalid IngressNode firewall config resource name", "name", req.Name)
@@ -138,15 +166,20 @@ func (r *IngressNodeFirewallConfigReconciler) syncIngressNodeFwConfigResources(c
 	data.Data["IsOpenShift"] = r.PlatformInfo.IsOpenShift()
 	if config.Spec.Debug != nil {
 		data.Data["Debug"] = "0"
+		os.Setenv("EBPF_DEBUG_MODE", "1")
 		if *config.Spec.Debug {
 			data.Data["Debug"] = "1"
+			os.Setenv("EBPF_DEBUG_MODE", "1")
 		}
 	}
 
 	if config.Spec.EBPFProgramManagerMode != nil {
 		data.Data["Mode"] = "0"
+		os.Setenv("EBPF_MANAGER_MODE", "0")
 		if *config.Spec.EBPFProgramManagerMode {
+			// Set env var for operator process that ebpf program manager mode is enabled.
 			data.Data["Mode"] = "1"
+			os.Setenv("EBPF_MANAGER_MODE", "1")
 		}
 	}
 

@@ -6,7 +6,7 @@
 #include "bpf_tracing.h"
 #include "ingress_node_firewall.h"
 
-#define MAX_CPUS 256
+//#define MAX_CPUS 256
 
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) &&             \
     __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -28,7 +28,9 @@ struct {
   __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
   __type(key, __u32);
   __type(value, __u32);
-  __uint(max_entries, MAX_CPUS);
+  // Hardcoded for now, Aya will need to automatically calculate the number of CPUS for the BPF_MAP_CREATE syscall
+  // Just like cilium/ebpf does.
+  __uint(max_entries, 24);
   __uint(pinning, LIBBPF_PIN_BY_NAME);
 } ingress_node_firewall_events_map SEC(".maps");
 
@@ -551,7 +553,7 @@ int xdp_ingress_node_firewall_process(struct xdp_md *ctx) {
   return xdp_ingress_node_firewall_main(ctx);
 }
 
-SEC("tcx_ingress_node_fw")
+SEC("classifier/tcx_ingress_node_fw")
 int tcx_ingress_node_firewall_process(struct __sk_buff *skb) {
   return tcx_ingress_node_firewall_main(skb);
 }

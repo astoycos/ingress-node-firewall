@@ -54,7 +54,7 @@ type IngNodeFwController struct {
 }
 
 // $BPF_CLANG and $BPF_CFLAGS are set by the Makefile.
-//go:generate bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS -type ruleType_st -type event_hdr_st -type ruleStatistics_st Bpf ../../bpf/ingress_node_firewall_kernel.c -- -I ../../bpf/headers -I/usr/include/x86_64-linux-gnu/
+//go:generate bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS -target amd64,arm64,ppc64le,s390x -type ruleType_st -type event_hdr_st -type ruleStatistics_st Bpf ../../bpf/ingress_node_firewall_kernel.c -- -I ../../bpf/headers -I/usr/include/x86_64-linux-gnu/
 
 // NewIngNodeFwController creates new IngressNodeFirewall controller object.
 func NewIngNodeFwController() (*IngNodeFwController, error) {
@@ -63,58 +63,97 @@ func NewIngNodeFwController() (*IngNodeFwController, error) {
 		return nil, err
 	}
 
-	pinDir := path.Join(bpfFSPath, xdpIngressNodeFirewallProcess)
-	if err := os.MkdirAll(pinDir, os.ModePerm); err != nil {
-		return nil, fmt.Errorf("failed to create pinDir %s: %s", pinDir, err)
-	}
-	// Load pre-compiled programs into the kernel.
-	objs := BpfObjects{}
-	spec, err := LoadBpf()
-	if err != nil {
-		return nil, fmt.Errorf("failed loading BPF data: %w", err)
-	}
-	debugLookupVal, ok := os.LookupEnv(debugLookupEnvVar)
-	if ok {
-		val, err := strconv.Atoi(debugLookupVal)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert %q to integer: %v", debugLookupVal, err)
-		}
-		if err := spec.RewriteConstants(map[string]interface{}{
-			debugLookup: uint32(val),
-		}); err != nil {
-			return nil, fmt.Errorf("failed to rewrite BPF constants definition: %w", err)
-		}
-	}
-
-	if err := spec.LoadAndAssign(&objs, &ebpf.CollectionOptions{Maps: ebpf.MapOptions{PinPath: pinDir}}); err != nil {
-		var ve *ebpf.VerifierError
-		if errors.As(err, &ve) {
-			// Using %+v will print the whole verifier error, not just the last
-			// few lines.
-			klog.Infof("Verifier error: %+v", ve)
-		}
-		return nil, fmt.Errorf("loading objects: pinDir:%s, err:%s", pinDir, err)
-	}
-	infc := &IngNodeFwController{
-		objs:    objs,
-		pinPath: pinDir,
-		links:   make(map[string]link.Link, 0),
-	}
-
-	ebpfManagerMode, ok := os.LookupEnv(ebpfProgramMangerEnvVar)
-	if ok {
+	ebpfManager := false
+	if ebpfManagerMode, ok := os.LookupEnv(ebpfProgramMangerEnvVar); ok {
 		val, err := strconv.ParseBool(ebpfManagerMode)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert %q to bool: %v", ebpfManagerMode, err)
 		}
-		infc.Mode = val
+		ebpfManager = val
 	}
 
-	// Load pinned links from /sys/fs/bpf/xdp_ingress_node_firewall_process on initialization.
-	// That way, the state in /sys/fs/bpf/xdp_ingress_node_firewall_process and the tracked list of links
-	// will be in sync.
-	if err := infc.loadPinnedLinks(); err != nil {
-		return nil, err
+	var pinDir string
+	objs := BpfObjects{}
+	if ebpfManager {
+		klog.Info("Ebpf manager enabled loading maps from /run/ignfw/maps")
+		pinDir = "/run/ignfw/maps"
+	} else {
+		pinDir = path.Join(bpfFSPath, xdpIngressNodeFirewallProcess)
+		if err := os.MkdirAll(pinDir, os.ModePerm); err != nil {
+			return nil, fmt.Errorf("failed to create pinDir %s: %s", pinDir, err)
+		}
+
+		// Load pre-compiled programs into the kernel.
+		spec, err := LoadBpf()
+		if err != nil {
+			return nil, fmt.Errorf("failed loading BPF data: %w", err)
+		}
+		debugLookupVal, ok := os.LookupEnv(debugLookupEnvVar)
+		if ok {
+			val, err := strconv.Atoi(debugLookupVal)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert %q to integer: %v", debugLookupVal, err)
+			}
+			if err := spec.RewriteConstants(map[string]interface{}{
+				debugLookup: uint32(val),
+			}); err != nil {
+				return nil, fmt.Errorf("failed to rewrite BPF constants definition: %w", err)
+			}
+		}
+
+		if err := spec.LoadAndAssign(&objs, &ebpf.CollectionOptions{Maps: ebpf.MapOptions{PinPath: pinDir}}); err != nil {
+			var ve *ebpf.VerifierError
+			if errors.As(err, &ve) {
+				// Using %+v will print the whole verifier error, not just the last
+				// few lines.
+				klog.Infof("Verifier error: %+v", ve)
+			}
+			return nil, fmt.Errorf("loading objects: pinDir:%s, err:%s", pinDir, err)
+		}
+	}
+
+	infc := &IngNodeFwController{
+		objs:    objs,
+		pinPath: pinDir,
+		links:   make(map[string]link.Link, 0),
+		Mode:    ebpfManager,
+	}
+
+	if ebpfManager {
+		var err error
+		opts := &ebpf.LoadPinOptions{
+			ReadOnly:  false,
+			WriteOnly: false,
+			Flags:     0,
+		}
+
+		infc.objs.BpfMaps.IngressNodeFirewallEventsMap, err = ebpf.LoadPinnedMap(path.Join(pinDir, "ingress_node_firewall_events_map"), opts)
+		if err != nil {
+			return nil, fmt.Errorf("Failed loading ingress_node_firewall_events_map from pinDir:%s, err:%s", pinDir, err)
+		}
+
+		infc.objs.BpfMaps.IngressNodeFirewallStatisticsMap, err = ebpf.LoadPinnedMap(path.Join(pinDir, "ingress_node_firewall_statistics_map"), opts)
+		if err != nil {
+			return nil, fmt.Errorf("Failed loading ingress_node_firewall_statistics_map from pinDir:%s, err:%s", pinDir, err)
+		}
+
+		infc.objs.BpfMaps.IngressNodeFirewallTableMap, err = ebpf.LoadPinnedMap(path.Join(pinDir, "ingress_node_firewall_table_map"), opts)
+		if err != nil {
+			return nil, fmt.Errorf("Failed loading ingress_node_firewall_table_map from pinDir:%s, err:%s", pinDir, err)
+		}
+
+		infc.objs.BpfMaps.IngressNodeFirewallDbgMap, err = ebpf.LoadPinnedMap(path.Join(pinDir, "ingress_node_firewall_dbg_map"), opts)
+		if err != nil {
+			return nil, fmt.Errorf("Failed loading ingress_node_firewall_dbg_map from pinDir:%s, err:%s", pinDir, err)
+		}
+
+	} else {
+		// Load pinned links from /sys/fs/bpf/xdp_ingress_node_firewall_process on initialization.
+		// That way, the state in /sys/fs/bpf/xdp_ingress_node_firewall_process and the tracked list of links
+		// will be in sync.
+		if err := infc.loadPinnedLinks(); err != nil {
+			return nil, err
+		}
 	}
 
 	// Generate ingress node fw events
